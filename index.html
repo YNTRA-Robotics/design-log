@@ -62,7 +62,7 @@
   .when .wk{display:block; font-size:.75rem; letter-spacing:.04em; text-transform:uppercase}
   .entry h2{margin:0 0 6px; font-size:1.15rem; font-weight:700; letter-spacing:-.015em; line-height:1.3}
   .tag{display:inline-block; font-size:.74rem; padding:2px 8px; border-radius:4px; background:var(--chip); color:var(--ink-2); border:1px solid var(--rule); margin:0 6px 8px 0; text-decoration:none; cursor:pointer}
-  .tag.cat{font-weight:600; letter-spacing:.02em; text-transform:uppercase; font-size:.68rem}
+  .tag.cat{font-weight:600; letter-spacing:.02em; text-transform:uppercase; font-size:.68rem; padding:2px 8px; border-bottom:1px solid var(--rule)}
   .who{display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px}
   .who span{font-size:.78rem; padding:2px 8px; border:1px solid var(--rule-strong); border-radius:999px; color:var(--ink-2)}
   .who span.dim{opacity:.35}
@@ -181,6 +181,22 @@
   .actions{display:flex; justify-content:flex-end; gap:10px; margin-top:6px; align-items:center}
   .actions .status{margin-right:auto; font-size:.85rem; color:var(--mute)}
   @media (prefers-reduced-motion:no-preference){ html{scroll-behavior:smooth} }
+
+  /* ---- edit / delete ---- */
+  .efoot{display:flex; justify-content:space-between; align-items:baseline; gap:6px 16px; flex-wrap:wrap; margin-top:10px}
+  .efoot .logged{margin-top:0}
+  .eacts{display:flex; gap:14px; margin-left:auto}
+  .lnk{background:none; border:0; padding:0; font-size:.78rem; color:var(--mute); cursor:pointer; text-decoration:underline; text-underline-offset:3px; text-decoration-color:var(--rule-strong)}
+  .lnk:hover{color:var(--ink); text-decoration-color:var(--ink)}
+  .lnk.del:hover{color:var(--blocked); text-decoration-color:var(--blocked)}
+  .hist .lnk{margin-left:8px; font-size:.74rem}
+  .btn.danger{background:var(--blocked); border-color:var(--blocked); color:var(--bg)}
+  .btn.ghost.del{color:var(--blocked); border-color:var(--blocked)}
+  .actions .left{margin-right:auto; display:flex; gap:12px; align-items:center}
+  .actions .left .status{margin-right:0}
+  #cmodal{z-index:11; align-items:center}
+  .panel.narrow{width:min(460px,100%)}
+  .panel .cbody{margin:0 0 20px; color:var(--ink-2); font-size:.95rem; white-space:pre-line}
 </style>
 
 <script>
@@ -281,7 +297,7 @@ const STATUSES = [["todo", "To do"], ["doing", "In progress"], ["blocked", "Bloc
     <div class="f"><label>Individual contributions <span class="hint">one line per selected member</span></label><div class="who-did" id="f-contrib"><span class="none">Select members above.</span></div></div>
     <div class="f"><label for="f-links">Links <span class="hint">optional, one per line: CAD, docs, photos. Use "Label | URL" to name a link</span></label><textarea id="f-links" style="min-height:56px"></textarea></div>
     <div class="err" id="f-err" hidden></div>
-    <div class="actions"><span class="status" id="f-status"></span><button class="btn ghost" type="button" id="cancel">Cancel</button><button class="btn" type="submit" id="save">Save entry</button></div>
+    <div class="actions"><div class="left"><button class="btn ghost del" type="button" id="delete" hidden>Delete entry</button><span class="status" id="f-status"></span></div><button class="btn ghost" type="button" id="cancel">Cancel</button><button class="btn" type="submit" id="save">Save entry</button></div>
   </form>
 </div>
 
@@ -301,8 +317,18 @@ const STATUSES = [["todo", "To do"], ["doing", "In progress"], ["blocked", "Bloc
     </div>
     <div class="f"><label>Owners</label><div class="checks" id="t-owners"></div></div>
     <div class="err" id="t-err" hidden></div>
-    <div class="actions"><span class="status" id="t-status-msg"></span><button class="btn ghost" type="button" id="t-cancel">Cancel</button><button class="btn" type="submit" id="t-save">Save task</button></div>
+    <div class="actions"><div class="left"><button class="btn ghost del" type="button" id="t-delete" hidden>Delete task</button><span class="status" id="t-status-msg"></span></div><button class="btn ghost" type="button" id="t-cancel">Cancel</button><button class="btn" type="submit" id="t-save">Save task</button></div>
   </form>
+</div>
+
+<!-- CONFIRM / NOTICE -->
+<div class="modal" id="cmodal" role="alertdialog" aria-modal="true" aria-labelledby="c-h" aria-describedby="c-p">
+  <div class="panel narrow">
+    <h2 id="c-h"></h2>
+    <p class="cbody" id="c-p"></p>
+    <div class="err" id="c-err" hidden></div>
+    <div class="actions"><div class="left"><span class="status" id="c-msg"></span></div><button class="btn ghost" type="button" id="c-cancel">Cancel</button><button class="btn danger" type="button" id="c-ok">Delete</button></div>
+  </div>
 </div>
 
 <script>
@@ -344,6 +370,23 @@ const STATUSES = [["todo", "To do"], ["doing", "In progress"], ["blocked", "Bloc
   async function saveEntry(e){ if (local){ const d = readLocal(); d.entries.push(e); writeLocal(d); return; } await post({action:"entry", ...e}); }
   async function saveTask(t){ if (local){ const d = readLocal(); d.tasks.push(t); writeLocal(d); return; } await post({action:"task", ...t}); }
   async function updateTask(id, patch){ if (local){ const d = readLocal(); const t = d.tasks.find(x => x.id === id); if (t) Object.assign(t, patch); writeLocal(d); return; } await post({action:"updateTask", id, ...patch}); }
+  // Edit / delete. These need the add-on in mantle-log-edit-delete.gs on the backend.
+  async function updateEntry(e){ if (local){ const d = readLocal(); const i = d.entries.findIndex(x => x.id === e.id); if (i > -1) d.entries[i] = e; writeLocal(d); return; } await post({...e, action:"updateEntry"}); }
+  async function deleteEntry(id){ if (local){ const d = readLocal(); d.entries = d.entries.filter(x => x.id !== id); writeLocal(d); return; } await post({action:"deleteEntry", id}); }
+  async function editTask(id, patch){ if (local) return updateTask(id, patch); await post({...patch, action:"editTask", id}); }
+  async function deleteTask(id){ if (local){ const d = readLocal(); detachTask(d, id); writeLocal(d); return; } await post({action:"deleteTask", id}); }
+  // Deleting a task never deletes log entries: subtasks move up a level and entries stay in the log, unlinked.
+  function detachTask(d, id){
+    const t = d.tasks.find(x => x.id === id); if (!t) return;
+    d.tasks.forEach(x => { if (x.parent === id) x.parent = t.parent || ""; });
+    d.entries.forEach(e => { if (e.task === id){ e.task = ""; if (!e.category) e.category = t.category || ""; } });
+    d.tasks = d.tasks.filter(x => x.id !== id);
+  }
+  let canEdit = local, capsChecked = local;
+  async function checkCaps(){
+    if (capsChecked) return;
+    try{ const r = await fetch(BACKEND_URL + "?caps=1&t=" + Date.now(), {cache:"no-store"}); const j = await r.json(); canEdit = !!(j && Array.isArray(j.caps) && j.caps.includes("deleteTask")); capsChecked = true; } catch(_){}
+  }
 
   // ---------- state ----------
   let entries = [], tasks = [], active = null, view = "board", openTask = null, chips = {};
@@ -406,8 +449,12 @@ const STATUSES = [["todo", "To do"], ["doing", "In progress"], ["blocked", "Bloc
       const cs = (e.contributions || []).filter(c => c[1]);
       const contrib = cs.length ? "<ul class='contrib'>" + cs.map(c => "<li class='" + (active && c[0] === active ? "hl" : "") + "'><b>" + esc(c[0]) + "</b> " + esc(c[1]) + "</li>").join("") + "</ul>" : "";
       const links = (e.links || []).length ? "<div class='links'>" + e.links.map(l => "<a href=\"" + esc(l[1]) + "\" target=\"_blank\" rel=\"noopener\">" + esc(l[0]) + "</a>").join("") + "</div>" : "";
-      const logged = e.by ? "<div class='logged'>Logged by " + esc(e.by) + (e.created ? " · " + esc(new Date(e.created).toLocaleString("en-CA", {dateStyle:"medium", timeStyle:"short"})) : "") + "</div>" : "";
-      li.innerHTML = "<div class='when'><span class='wk'>" + weekday(e.date) + "</span>" + esc(fmt(e.date)) + "</div><div>" + (tags ? "<div>" + tags + "</div>" : "") + "<h2>" + esc(e.title) + "</h2><div class='who'>" + who + "</div>" + (e.summary ? "<p>" + esc(e.summary) + "</p>" : "") + contrib + links + logged + "</div>";
+      const stamp = s => { const d = new Date(s); return isNaN(d) ? "" : d.toLocaleString("en-CA", {dateStyle:"medium", timeStyle:"short"}); };
+      const logged = "<div class='logged'>" + (e.by ? "Logged by " + esc(e.by) + (e.created && stamp(e.created) ? " · " + esc(stamp(e.created)) : "") : "") + (e.edited && stamp(e.edited) ? (e.by ? " · " : "") + "edited " + esc(stamp(e.edited)) : "") + "</div>";
+      const acts = "<div class='eacts'><button class='lnk' type='button' data-edit>Edit</button><button class='lnk del' type='button' data-del>Delete</button></div>";
+      li.innerHTML = "<div class='when'><span class='wk'>" + weekday(e.date) + "</span>" + esc(fmt(e.date)) + "</div><div>" + (tags ? "<div>" + tags + "</div>" : "") + "<h2>" + esc(e.title) + "</h2><div class='who'>" + who + "</div>" + (e.summary ? "<p>" + esc(e.summary) + "</p>" : "") + contrib + links + "<div class='efoot'>" + logged + acts + "</div></div>";
+      li.querySelector("[data-edit]").addEventListener("click", () => editEntry(e));
+      li.querySelector("[data-del]").addEventListener("click", () => confirmDeleteEntry(e));
       log.appendChild(li);
     });
     log.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => { openTask = b.dataset.open; let cur = taskById(openTask); while (cur && cur.parent){ collapsed.delete(cur.parent); cur = taskById(cur.parent); } saveCollapsed(); setView("board"); }));
@@ -462,11 +509,13 @@ const STATUSES = [["todo", "To do"], ["doing", "In progress"], ["blocked", "Bloc
     row.addEventListener("click", () => { openTask = openTask === t.id ? null : t.id; render(); });
     if (openTask === t.id){
       const body = document.createElement("div"); body.className = "tbody";
-      const histHtml = hist.length ? "<ul class='hist'>" + hist.map(e => "<li><span class='d'>" + esc(fmtS(e.date)) + "</span><div><b>" + esc(e.title) + "</b>" + (e.status ? "<span class='stpill " + esc(e.status) + "'>" + esc(stLabel[e.status] || e.status) + "</span>" : "") + (e.summary ? "<div class='c'>" + esc(e.summary) + "</div>" : "") + ((e.contributions || []).filter(c => c[1]).length ? "<div class='c'><small>" + e.contributions.filter(c => c[1]).map(c => esc(c[0].split(" ")[0]) + ": " + esc(c[1])).join(" · ") + "</small></div>" : "") + "</div></li>").join("") + "</ul>" : "<div class='tnone'>No progress logged " + (isGrp ? "directly on this yet; see the tasks below." : "on this yet.") + "</div>";
+      const histHtml = hist.length ? "<ul class='hist'>" + hist.map(e => "<li><span class='d'>" + esc(fmtS(e.date)) + "</span><div><b>" + esc(e.title) + "</b><button class='lnk' type='button' data-edit-entry=\"" + esc(e.id) + "\">Edit</button>" + (e.status ? "<span class='stpill " + esc(e.status) + "'>" + esc(stLabel[e.status] || e.status) + "</span>" : "") + (e.summary ? "<div class='c'>" + esc(e.summary) + "</div>" : "") + ((e.contributions || []).filter(c => c[1]).length ? "<div class='c'><small>" + e.contributions.filter(c => c[1]).map(c => esc(c[0].split(" ")[0]) + ": " + esc(c[1])).join(" · ") + "</small></div>" : "") + "</div></li>").join("") + "</ul>" : "<div class='tnone'>No progress logged " + (isGrp ? "directly on this yet; see the tasks below." : "on this yet.") + "</div>";
       const crumb = pathOf(t).slice(0, -1).map(x => esc(x.title)).join(" › ");
       body.innerHTML = (crumb ? "<div class='logged' style='margin:0 0 8px'>" + esc(t.category) + " › " + crumb + "</div>" : "") + (t.desc ? "<div class='tdesc'>" + esc(t.desc) + "</div>" : "") + (t.by ? "<div class='logged'>Created by " + esc(t.by) + (t.created ? " · " + esc(fmt(t.created.slice(0,10))) : "") + "</div>" : "") + "<h4>History</h4>" + histHtml +
-        "<div class='tacts'><button class='btn sm' type='button' data-log>Log progress</button><button class='btn sm ghost' type='button' data-sub>Add " + (isGrp ? "task under this" : "subtask") + "</button></div>";
+        "<div class='tacts'><button class='btn sm' type='button' data-log>Log progress</button><button class='btn sm ghost' type='button' data-sub>Add " + (isGrp ? "task under this" : "subtask") + "</button><button class='btn sm ghost' type='button' data-edit-task>Edit task</button></div>";
       body.querySelector("[data-log]").addEventListener("click", () => openForm({task: t.id}));
+      body.querySelector("[data-edit-task]").addEventListener("click", async () => { if (await needBackend()) return; openTaskForm({edit: t}); });
+      body.querySelectorAll("[data-edit-entry]").forEach(b => b.addEventListener("click", () => { const e = entries.find(x => x.id === b.dataset.editEntry); if (e) editEntry(e); }));
       body.querySelector("[data-sub]").addEventListener("click", () => openTaskForm({category: t.category, parent: t.id}));
       li.appendChild(body);
     }
@@ -522,8 +571,61 @@ const STATUSES = [["todo", "To do"], ["doing", "In progress"], ["blocked", "Bloc
   function setActive(name){ active = name; render(); }
 
   async function refresh(){
+    checkCaps();
     try{ const d = await loadAll(); entries = d.entries; tasks = d.tasks; render(); }
     catch(err){ entries = []; tasks = []; render(); const st = $("#state"); st.hidden = false; $("#state-add").hidden = true; $("#state-h").textContent = "Couldn't load the log"; $("#state-p").textContent = "Check that BACKEND_URL is the deployed web-app link and that access is set to Anyone."; }
+  }
+
+  // ---------- confirm / notice dialog ----------
+  const cmodal = $("#cmodal"), cOk = $("#c-ok"), cCancel = $("#c-cancel"), cErr = $("#c-err"), cMsg = $("#c-msg");
+  let cRun = null;
+  function ask(o){
+    $("#c-h").textContent = o.title; $("#c-p").textContent = o.body || "";
+    cErr.hidden = true; cMsg.textContent = ""; cOk.disabled = false;
+    cRun = o.run || null; cOk.hidden = !cRun; cOk.textContent = o.ok || "Delete"; cCancel.textContent = cRun ? "Cancel" : "OK";
+    cmodal.classList.add("open"); cCancel.focus();
+  }
+  function closeAsk(){ cmodal.classList.remove("open"); cRun = null; }
+  const askOpen = () => cmodal.classList.contains("open");
+  cCancel.addEventListener("click", () => { if (!cOk.disabled) closeAsk(); });
+  cmodal.addEventListener("mousedown", e => { if (e.target === cmodal && !cOk.disabled) closeAsk(); });
+  cOk.addEventListener("click", async () => {
+    if (!cRun) return;
+    cOk.disabled = true; cCancel.disabled = true; cMsg.textContent = "Deleting…"; cErr.hidden = true;
+    try{ await cRun(); closeAsk(); }
+    catch(ex){ cErr.hidden = false; cErr.textContent = "Couldn't delete: " + ex.message; }
+    finally{ cOk.disabled = false; cCancel.disabled = false; cMsg.textContent = ""; }
+  });
+
+  // Returns true (and explains) when the backend hasn't been given the edit/delete add-on yet.
+  async function needBackend(){
+    if (!capsChecked) await checkCaps();
+    if (canEdit) return false;
+    ask({title: capsChecked ? "Backend update needed" : "Couldn't reach the backend", body: capsChecked ? "Editing and deleting need the add-on script (mantle-log-edit-delete.gs) added to the Google Apps Script project and redeployed. Setup steps are at the top of that file. Nothing was changed." : "Check your connection and try again. Nothing was changed."});
+    return true;
+  }
+  const recoverNote = local ? "" : "\n\nIf it was a mistake, the Google Sheet's version history can still bring it back.";
+  async function editEntry(e){ if (await needBackend()) return; openForm({edit: e}); }
+  async function confirmDeleteEntry(e, after){
+    if (await needBackend()) return;
+    ask({title: "Delete this entry?", body: "\"" + e.title + "\" (" + fmt(e.date) + ") will be removed from the log." + recoverNote, ok: "Delete entry", run: async () => {
+      await deleteEntry(e.id);
+      entries = entries.filter(x => x.id !== e.id);
+      if (after) after(); render(); if (!local) refresh();
+    }});
+  }
+  async function confirmDeleteTask(t, after){
+    if (await needBackend()) return;
+    const kids = subsOf(t.id), hist = entriesFor(t.id), par = t.parent ? taskById(t.parent) : null;
+    const bits = [];
+    if (kids.length) bits.push("Its " + kids.length + (kids.length === 1 ? " subtask moves" : " subtasks move") + " up to " + (par ? "\"" + par.title + "\"" : "the top level of " + t.category) + ".");
+    if (hist.length) bits.push("Its " + hist.length + " log " + (hist.length === 1 ? "entry stays" : "entries stay") + " in the Log, just no longer linked to a task.");
+    ask({title: "Delete \"" + t.title + "\"?", body: (bits.join(" ") || "It has no subtasks or log entries.") + recoverNote, ok: "Delete task", run: async () => {
+      await deleteTask(t.id);
+      const d = {tasks, entries}; detachTask(d, t.id); tasks = d.tasks; entries = d.entries;
+      if (openTask === t.id) openTask = t.parent || null;
+      if (after) after(); render(); if (!local) refresh();
+    }});
   }
 
   // ---------- entry form ----------
@@ -557,8 +659,30 @@ const STATUSES = [["todo", "To do"], ["doing", "In progress"], ["blocked", "Bloc
   }
   $("#f-task").addEventListener("change", syncTaskFields);
 
+  let editingEntry = null, prefillStatus = "";
+  const memberBox = n => checks.querySelector("input[value=\"" + n.replace(/"/g,'\\"') + "\"]");
+  const contribBox = n => contribWrap.querySelector(".one[data-for=\"" + n.replace(/"/g,'\\"') + "\"] textarea");
+  function fillEntry(e){
+    $("#f-date").value = e.date || ""; $("#f-by").value = e.by || "";
+    fillTaskSelect($("#f-task"), e.task || "");
+    const t = e.task ? taskById(e.task) : null;
+    if (!t) $("#f-task").value = "";
+    syncTaskFields();
+    if (!t){ if (e.category && ![...catSel.options].some(op => op.value === e.category)) catSel.insertAdjacentHTML("beforeend", "<option value=\"" + esc(e.category) + "\">" + esc(e.category) + "</option>"); catSel.value = e.category || ""; }
+    if (t && e.status) fstat.value = e.status;
+    prefillStatus = fstat.value;
+    $("#f-title").value = e.title || ""; $("#f-summary").value = e.summary || "";
+    (e.members || []).forEach(n => { const cb = memberBox(n); if (cb) cb.checked = true; });
+    syncContrib();
+    (e.contributions || []).forEach(c => { const ta = contribBox(c[0]); if (ta) ta.value = c[1] || ""; });
+    $("#f-links").value = (e.links || []).map(l => l[0] === String(l[1]).replace(/^https?:\/\//,"").slice(0,48) ? l[1] : l[0] + " | " + l[1]).join("\n");
+    $("#form-h").textContent = "Edit entry";
+  }
   function openForm(o){
     o = o || {}; form.reset(); err.hidden = true; status.textContent = "";
+    editingEntry = o.edit || null;
+    $("#delete").hidden = !editingEntry; $("#save").textContent = editingEntry ? "Save changes" : "Save entry";
+    if (editingEntry){ fillEntry(editingEntry); modal.classList.add("open"); $("#f-title").focus(); return; }
     $("#f-date").value = today();
     try{ $("#f-by").value = localStorage.getItem(LOCAL_KEY + ":by") || ""; } catch(_){}
     fillTaskSelect($("#f-task"), o.task || "");
@@ -576,6 +700,7 @@ const STATUSES = [["todo", "To do"], ["doing", "In progress"], ["blocked", "Bloc
   $("#add").addEventListener("click", () => openForm());
   $("#state-add").addEventListener("click", () => { if (view === "board" && !tasks.length) openTaskForm(); else openForm(); });
   $("#cancel").addEventListener("click", closeForm);
+  $("#delete").addEventListener("click", () => { if (editingEntry) confirmDeleteEntry(editingEntry, closeForm); });
   modal.addEventListener("mousedown", e => { if (e.target === modal) closeForm(); });
 
   form.addEventListener("submit", async e => {
@@ -591,13 +716,20 @@ const STATUSES = [["todo", "To do"], ["doing", "In progress"], ["blocked", "Bloc
     if (missing.length){ err.hidden = false; err.textContent = "Say what " + missing.join(", ") + " did. Instructors grade on individual contributions."; return; }
     const links = $("#f-links").value.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => { const p = l.split("|").map(s => s.trim()); return p.length > 1 ? [p[0], p[1]] : [l.replace(/^https?:\/\//,"").slice(0,48), l]; });
     const tObj = task ? taskById(task) : null, newStatus = tObj ? fstat.value : "";
-    const entry = { id: uid(), created: new Date().toISOString(), date, by, title, summary, members, contributions, links, task, category, status: newStatus };
+    const editing = editingEntry;
+    const base = editing ? { id: editing.id, created: editing.created || "", edited: new Date().toISOString() } : { id: uid(), created: new Date().toISOString() };
+    const entry = { ...base, date, by, title, summary, members, contributions, links, task, category, status: newStatus };
+    // When editing, only push a task status change if the person actually changed it in the form.
+    const statusTouched = !editing || task !== (editing.task || "") || newStatus !== prefillStatus;
     $("#save").disabled = true; status.textContent = "Saving…"; err.hidden = true;
     try{
-      await saveEntry(entry);
-      if (tObj && newStatus && newStatus !== tObj.status){ await updateTask(task, {status: newStatus}); tObj.status = newStatus; }
-      try{ localStorage.setItem(LOCAL_KEY + ":by", by); } catch(_){}
-      closeForm(); entries.push(entry); if (task) openTask = task; render(); if (!local) refresh();
+      if (editing) await updateEntry(entry); else await saveEntry(entry);
+      if (tObj && newStatus && statusTouched && newStatus !== tObj.status){ await updateTask(task, {status: newStatus}); tObj.status = newStatus; }
+      if (!editing){ try{ localStorage.setItem(LOCAL_KEY + ":by", by); } catch(_){} }
+      closeForm();
+      if (editing){ const i = entries.findIndex(x => x.id === entry.id); if (i > -1) entries[i] = entry; else entries.push(entry); }
+      else { entries.push(entry); if (task) openTask = task; }
+      render(); if (!local) refresh();
     }
     catch(ex){ err.hidden = false; err.textContent = "Couldn't save: " + ex.message; }
     finally{ $("#save").disabled = false; status.textContent = ""; }
@@ -608,13 +740,27 @@ const STATUSES = [["todo", "To do"], ["doing", "In progress"], ["blocked", "Bloc
   const tcat = $("#t-cat"); CATEGORIES.forEach(c => tcat.insertAdjacentHTML("beforeend", "<option value=\"" + esc(c) + "\">" + esc(c) + "</option>"));
   const tst = $("#t-status"); STATUSES.forEach(([v,l]) => tst.insertAdjacentHTML("beforeend", "<option value='" + v + "'>" + l + "</option>"));
   const towners = $("#t-owners"); names.forEach(n => towners.insertAdjacentHTML("beforeend", "<label><input type='checkbox' value=\"" + esc(n) + "\"> " + esc(n) + "</label>"));
+  let editingTask = null;
   tcat.addEventListener("change", () => fillParent(""));
   function fillParent(selected){
     const sel = $("#t-parent"); sel.innerHTML = "<option value=''>Top level in this category</option>";
-    treeOf(tcat.value).forEach(([t, d]) => { const o = document.createElement("option"); o.value = t.id; o.textContent = "\u00a0\u00a0".repeat(d) + (d ? "↳ " : "") + t.title; if (t.id === selected) o.selected = true; sel.appendChild(o); });
+    // A task can't move under itself or one of its own subtasks.
+    const banned = editingTask ? new Set([editingTask.id, ...descendants(editingTask.id).map(x => x.id)]) : new Set();
+    treeOf(tcat.value).filter(([t]) => !banned.has(t.id)).forEach(([t, d]) => { const o = document.createElement("option"); o.value = t.id; o.textContent = "\u00a0\u00a0".repeat(d) + (d ? "↳ " : "") + t.title; if (t.id === selected) o.selected = true; sel.appendChild(o); });
   }
   function openTaskForm(o){
     o = o || {}; tform.reset(); terr.hidden = true; tmsg.textContent = "";
+    editingTask = o.edit || null;
+    $("#t-delete").hidden = !editingTask; $("#t-save").textContent = editingTask ? "Save changes" : "Save task";
+    if (editingTask){
+      const t = editingTask;
+      if (t.category && ![...tcat.options].some(op => op.value === t.category)) tcat.insertAdjacentHTML("beforeend", "<option value=\"" + esc(t.category) + "\">" + esc(t.category) + "</option>");
+      tcat.value = t.category || CATEGORIES[0]; fillParent(t.parent || ""); tst.value = t.status || "todo";
+      $("#t-title").value = t.title || ""; $("#t-desc").value = t.desc || ""; $("#t-by").value = t.by || "";
+      (t.owners || []).forEach(n => { const cb = towners.querySelector("input[value=\"" + n.replace(/"/g,'\\"') + "\"]"); if (cb) cb.checked = true; });
+      $("#tform-h").textContent = "Edit task";
+      tmodal.classList.add("open"); $("#t-title").focus(); return;
+    }
     tcat.value = o.category || CATEGORIES[0]; fillParent(o.parent || ""); tst.value = "todo";
     try{ $("#t-by").value = localStorage.getItem(LOCAL_KEY + ":by") || ""; } catch(_){}
     if (active){ const cb = towners.querySelector("input[value=\"" + active.replace(/"/g,'\\"') + "\"]"); if (cb) cb.checked = true; if (!$("#t-by").value) $("#t-by").value = active; }
@@ -625,14 +771,28 @@ const STATUSES = [["todo", "To do"], ["doing", "In progress"], ["blocked", "Bloc
   function closeTaskForm(){ tmodal.classList.remove("open"); }
   $("#add-task").addEventListener("click", () => openTaskForm());
   $("#t-cancel").addEventListener("click", closeTaskForm);
+  $("#t-delete").addEventListener("click", () => { if (editingTask) confirmDeleteTask(editingTask, closeTaskForm); });
   tmodal.addEventListener("mousedown", e => { if (e.target === tmodal) closeTaskForm(); });
-  document.addEventListener("keydown", e => { if (e.key === "Escape"){ closeForm(); closeTaskForm(); } });
+  document.addEventListener("keydown", e => { if (e.key === "Escape"){ if (askOpen()){ if (!cOk.disabled) closeAsk(); return; } closeForm(); closeTaskForm(); } });
 
   tform.addEventListener("submit", async e => {
     e.preventDefault();
     const title = $("#t-title").value.trim(), category = tcat.value, parent = $("#t-parent").value, desc = $("#t-desc").value.trim(), by = $("#t-by").value.trim();
     const owners = [...towners.querySelectorAll("input:checked")].map(i => i.value);
     if (!title){ terr.hidden = false; terr.textContent = "Give the task a name."; return; }
+    if (editingTask){
+      const t = editingTask, patch = { category, parent, title, desc, status: tst.value, owners, by };
+      const moveKids = category !== t.category ? descendants(t.id) : [];
+      $("#t-save").disabled = true; tmsg.textContent = "Saving…"; terr.hidden = true;
+      try{
+        await editTask(t.id, patch);
+        for (const k of moveKids){ await editTask(k.id, {category}); k.category = category; }   // subtasks follow their parent to the new category
+        Object.assign(t, patch); closeTaskForm(); openTask = t.id; setView("board"); if (!local) refresh();
+      }
+      catch(ex){ terr.hidden = false; terr.textContent = "Couldn't save: " + ex.message; }
+      finally{ $("#t-save").disabled = false; tmsg.textContent = ""; }
+      return;
+    }
     const t = { id: uid(), created: new Date().toISOString(), category, parent, title, desc, status: tst.value, owners, by };
     $("#t-save").disabled = true; tmsg.textContent = "Saving…"; terr.hidden = true;
     try{ await saveTask(t); if (by){ try{ localStorage.setItem(LOCAL_KEY + ":by", by); } catch(_){} } closeTaskForm(); tasks.push(t); openTask = parent || t.id; setView("board"); if (!local) refresh(); }
